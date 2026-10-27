@@ -1,0 +1,6 @@
+{
+  "name": "Wake Up",
+  "description": "Routine-based alarm application with smart sequences and wake-up challenges.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
