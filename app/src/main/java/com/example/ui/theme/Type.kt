@@ -9,15 +9,7 @@ import androidx.compose.ui.unit.sp
 val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Light,
-        fontSize = 56.sp,
-        lineHeight = 64.sp,
-        letterSpacing = (-1.5).sp,
-        color = WakeUpTextPrimary
-    ),
-    displayMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 44.sp,
         lineHeight = 52.sp,
         letterSpacing = (-1.0).sp,
@@ -25,18 +17,18 @@ val Typography = Typography(
     ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
         letterSpacing = (-0.5).sp,
         color = WakeUpTextPrimary
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = (-0.2).sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.3).sp,
         color = WakeUpTextPrimary
     ),
     titleLarge = TextStyle(
@@ -44,7 +36,7 @@ val Typography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         lineHeight = 26.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.2).sp,
         color = WakeUpTextPrimary
     ),
     titleMedium = TextStyle(
@@ -52,7 +44,7 @@ val Typography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 22.sp,
-        letterSpacing = 0.1.sp,
+        letterSpacing = (-0.1).sp,
         color = WakeUpTextPrimary
     ),
     bodyLarge = TextStyle(
@@ -60,7 +52,6 @@ val Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 22.sp,
-        letterSpacing = 0.2.sp,
         color = WakeUpTextPrimary
     ),
     bodyMedium = TextStyle(
@@ -68,13 +59,12 @@ val Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
-        letterSpacing = 0.2.sp,
         color = WakeUpTextSecondary
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
+        fontSize = 15.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.1.sp
     ),
@@ -83,7 +73,15 @@ val Typography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.3.sp,
+        letterSpacing = 0.2.sp,
         color = WakeUpTextSecondary
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.2.sp,
+        color = WakeUpTextTertiary
     )
 )

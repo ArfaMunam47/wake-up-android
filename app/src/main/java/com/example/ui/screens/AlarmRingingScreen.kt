@@ -99,6 +99,7 @@ fun AlarmRingingScreen(
     occurrenceDate: String,
     label: String,
     challengeType: String,
+    soundName: String = "GENTLE",
     onDismissComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -211,20 +212,42 @@ fun AlarmRingingScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Sequence Pill
-            if (maxSequence > 1) {
+            // Sequence Pill & Sound Badge
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (maxSequence > 1) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(WakeUpCrimsonContainer)
+                            .border(1.dp, WakeUpCrimsonBorder, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Alarm ${sequenceIndex + 1} of $maxSequence in sequence",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = WakeUpCrimson
+                            )
+                        )
+                    }
+                }
+
+                val soundEnum = com.example.data.model.AlarmSound.fromName(soundName)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(WakeUpCrimsonContainer)
-                        .border(1.dp, WakeUpCrimsonBorder, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .background(WakeUpSurface)
+                        .border(1.dp, WakeUpDivider, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = "Alarm ${sequenceIndex + 1} of $maxSequence in sequence",
+                        text = "♪ ${soundEnum.displayName}",
                         style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = WakeUpCrimson
+                            fontWeight = FontWeight.Medium,
+                            color = WakeUpTextSecondary
                         )
                     )
                 }

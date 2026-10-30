@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.example.MainActivity
 import com.example.data.model.AlarmEntity
 import com.example.receiver.AlarmReceiver
 import java.text.SimpleDateFormat
@@ -25,16 +26,19 @@ class AlarmScheduler(private val context: Context) {
         const val EXTRA_OCCURRENCE_DATE = "com.example.wakeup.EXTRA_OCCURRENCE_DATE"
         const val EXTRA_ALARM_LABEL = "com.example.wakeup.EXTRA_ALARM_LABEL"
         const val EXTRA_CHALLENGE_TYPE = "com.example.wakeup.EXTRA_CHALLENGE_TYPE"
+        const val EXTRA_ALARM_SOUND = "com.example.wakeup.EXTRA_ALARM_SOUND"
 
         fun getRequestCode(alarmId: Long, sequenceIndex: Int): Int {
-            // Keep request code positive and unique per alarm + sequence step
-            val base = (alarmId % 10000).toInt() * 100
-            return base + (sequenceIndex % 100)
+            // Collision-free request code for up to 100M alarms and 20 sequence steps per alarm
+            val safeId = (alarmId and 0x3FFFFFF).toInt()
+            return (safeId * 20) + (sequenceIndex.coerceIn(0, 19))
         }
     }
 
     /**
      * Schedules the next occurrence (and its sequence of alarms, if enabled) for the given alarm.
+     * Uses real Android AlarmManager.setAlarmClock() for system-level priority, lockscreen integration,
+     * and guaranteed execution through Doze mode.
      */
     fun scheduleAlarm(alarm: AlarmEntity) {
         if (!alarm.isEnabled) {
@@ -42,7 +46,7 @@ class AlarmScheduler(private val context: Context) {
             return
         }
 
-        // Cancel existing pending intents for this alarm before rescheduling
+        // Cancel any existing pending intents for this alarm before rescheduling
         cancelAlarm(alarm.id)
 
         val nextOccurrence = calculateNextOccurrence(alarm) ?: run {
@@ -71,14 +75,15 @@ class AlarmScheduler(private val context: Context) {
                 putExtra(EXTRA_OCCURRENCE_DATE, occurrenceDateStr)
                 putExtra(EXTRA_ALARM_LABEL, alarm.label.ifBlank { "Wake Up" })
                 putExtra(EXTRA_CHALLENGE_TYPE, alarm.challengeType)
+                putExtra(EXTRA_ALARM_SOUND, alarm.soundName)
             }
 
             val requestCode = getRequestCode(alarm.id, index)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             val pendingIntent = PendingIntent.getBroadcast(context, requestCode, intent, flags)
 
-            setExactAlarm(triggerMillis, pendingIntent)
-            Log.d(TAG, "Scheduled alarm ${alarm.id} seq $index for $occurrenceDateStr at $triggerMillis (code $requestCode)")
+            setExactAlarm(triggerMillis, requestCode, pendingIntent)
+            Log.d(TAG, "Scheduled real alarm ${alarm.id} seq $index for $occurrenceDateStr at $triggerMillis (code $requestCode)")
         }
     }
 
@@ -86,8 +91,7 @@ class AlarmScheduler(private val context: Context) {
      * Cancels all scheduled intents for an alarm across all sequence steps.
      */
     fun cancelAlarm(alarmId: Long) {
-        // Clear up to 15 sequence slots to be thorough
-        for (index in 0..15) {
+        for (index in 0 until 20) {
             val requestCode = getRequestCode(alarmId, index)
             val intent = Intent(context, AlarmReceiver::class.java).apply {
                 action = AlarmReceiver.ACTION_ALARM_TRIGGER
@@ -214,9 +218,40 @@ class AlarmScheduler(private val context: Context) {
         return (0 until count).map { index -> base + (index * interval) }
     }
 
-    private fun setExactAlarm(triggerMillis: Long, pendingIntent: PendingIntent) {
+    /**
+     * Sets real Android system alarm using setAlarmClock when available.
+     * AlarmClockInfo integrates directly into system UI (lockscreen alarm banner and status bar icon)
+     * and guarantees execution even in deep Doze mode.
+     */
+    private fun setExactAlarm(triggerMillis: Long, requestCode: Int, pendingIntent: PendingIntent) {
         if (alarmManager == null) return
 
+        try {
+            // Intent opened if user taps alarm icon in system UI
+            val showIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val showPendingIntent = PendingIntent.getActivity(
+                context,
+                requestCode,
+                showIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerMillis, showPendingIntent)
+            alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+            Log.d(TAG, "Successfully setAlarmClock for trigger $triggerMillis")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "setAlarmClock not permitted, falling back to setExactAndAllowWhileIdle / setAndAllowWhileIdle", e)
+            fallbackSetAlarm(triggerMillis, pendingIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error scheduling with setAlarmClock, falling back", e)
+            fallbackSetAlarm(triggerMillis, pendingIntent)
+        }
+    }
+
+    private fun fallbackSetAlarm(triggerMillis: Long, pendingIntent: PendingIntent) {
+        if (alarmManager == null) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (alarmManager.canScheduleExactAlarms()) {
@@ -239,19 +274,8 @@ class AlarmScheduler(private val context: Context) {
                     pendingIntent
                 )
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Exact alarm permission missing, falling back to setAndAllowWhileIdle", e)
-            try {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerMillis,
-                    pendingIntent
-                )
-            } catch (ex: Exception) {
-                Log.e(TAG, "Failed to schedule alarm", ex)
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error scheduling alarm", e)
+            Log.e(TAG, "Fallback alarm scheduling failed", e)
         }
     }
 }

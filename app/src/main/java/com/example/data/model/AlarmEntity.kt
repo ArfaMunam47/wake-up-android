@@ -10,6 +10,18 @@ enum class ChallengeType {
     QR_CODE
 }
 
+enum class AlarmSound(val displayName: String, val rawResName: String, val description: String) {
+    GENTLE("Gentle Chime", "sound_gentle", "Soft ascending pentatonic chime"),
+    CLASSIC("Classic Bell", "sound_classic", "Twin-bell alarm clock pulse"),
+    URGENT("Urgent Beep", "sound_urgent", "Rapid escalating electronic alert");
+
+    companion object {
+        fun fromName(name: String?): AlarmSound {
+            return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: GENTLE
+        }
+    }
+}
+
 @Entity(tableName = "alarms")
 data class AlarmEntity(
     @PrimaryKey(autoGenerate = true)
@@ -25,6 +37,7 @@ data class AlarmEntity(
     val sequenceIntervalMinutes: Int = 5,
     val maxSequenceCount: Int = 4,
     val challengeType: String = ChallengeType.MATHS.name,
+    val soundName: String = AlarmSound.GENTLE.name,
     // Stores YYYY-MM-DD of the sequence completed for that specific morning
     val lastDismissedOccurrenceDate: String? = null,
     val createdAt: Long = System.currentTimeMillis()
@@ -75,4 +88,6 @@ data class AlarmEntity(
             ChallengeType.STANDARD
         }
     }
+
+    fun getSoundEnum(): AlarmSound = AlarmSound.fromName(soundName)
 }

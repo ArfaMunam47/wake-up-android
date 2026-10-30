@@ -19,7 +19,7 @@ private val WakeUpColorScheme = lightColorScheme(
     secondaryContainer = WakeUpSurfaceSecondary,
     onSecondaryContainer = WakeUpTextPrimary,
     tertiary = WakeUpTextSecondary,
-    background = WakeUpBackground,
+    background = WakeUpSurface,
     onBackground = WakeUpTextPrimary,
     surface = WakeUpSurface,
     onSurface = WakeUpTextPrimary,
@@ -38,8 +38,8 @@ fun MyApplicationTheme(
         SideEffect {
             val window = (view.context as? Activity)?.window
             window?.let {
-                it.statusBarColor = WakeUpBackground.toArgb()
-                it.navigationBarColor = WakeUpBackground.toArgb()
+                it.statusBarColor = WakeUpSurface.toArgb()
+                it.navigationBarColor = WakeUpSurface.toArgb()
                 val controller = WindowCompat.getInsetsController(it, view)
                 controller.isAppearanceLightStatusBars = true
                 controller.isAppearanceLightNavigationBars = true

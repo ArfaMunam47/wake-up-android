@@ -25,11 +25,14 @@ class AlarmRepository(
     fun getAlarmByIdFlow(id: Long): Flow<AlarmEntity?> = alarmDao.getAlarmByIdFlow(id)
 
     suspend fun saveAlarm(alarm: AlarmEntity): Long = withContext(Dispatchers.IO) {
-        val id = if (alarm.id == 0L) {
-            alarmDao.insert(alarm)
+        // When user creates or explicitly edits an alarm, reset lastDismissedOccurrenceDate
+        // so the new time can take effect immediately
+        val toSave = alarm.copy(lastDismissedOccurrenceDate = null)
+        val id = if (toSave.id == 0L) {
+            alarmDao.insert(toSave)
         } else {
-            alarmDao.update(alarm)
-            alarm.id
+            alarmDao.update(toSave)
+            toSave.id
         }
         val saved = alarmDao.getAlarmById(id)
         if (saved != null && saved.isEnabled) {
@@ -41,7 +44,11 @@ class AlarmRepository(
     }
 
     suspend fun toggleAlarm(alarm: AlarmEntity, isEnabled: Boolean) = withContext(Dispatchers.IO) {
-        val updated = alarm.copy(isEnabled = isEnabled)
+        // When user explicitly re-enables an alarm, clear past dismissal so it can ring
+        val updated = alarm.copy(
+            isEnabled = isEnabled,
+            lastDismissedOccurrenceDate = if (isEnabled) null else alarm.lastDismissedOccurrenceDate
+        )
         alarmDao.update(updated)
         if (isEnabled) {
             alarmScheduler.scheduleAlarm(updated)
@@ -80,6 +87,18 @@ class AlarmRepository(
         alarmDao.updateDismissedOccurrence(alarmId, todayStr)
 
         // 3. Fetch updated alarm and schedule its next recurring day
+        val alarm = alarmDao.getAlarmById(alarmId)
+        if (alarm != null && alarm.isEnabled) {
+            alarmScheduler.scheduleAlarm(alarm)
+        }
+    }
+
+    /**
+     * Called when the final sequence alarm has triggered in the morning.
+     * Records occurrence completion and queues the next recurring day occurrence.
+     */
+    suspend fun scheduleNextRecurringOccurrence(alarmId: Long, occurrenceDate: String) = withContext(Dispatchers.IO) {
+        alarmDao.updateDismissedOccurrence(alarmId, occurrenceDate)
         val alarm = alarmDao.getAlarmById(alarmId)
         if (alarm != null && alarm.isEnabled) {
             alarmScheduler.scheduleAlarm(alarm)

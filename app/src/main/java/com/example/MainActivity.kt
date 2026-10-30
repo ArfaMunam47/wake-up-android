@@ -31,6 +31,7 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsDialog
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.WakeUpBackground
+import com.example.ui.theme.WakeUpSurface
 import com.example.ui.viewmodel.AlarmViewModel
 
 sealed interface AppScreen {
@@ -68,7 +69,7 @@ class MainActivity : ComponentActivity() {
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = WakeUpBackground
+                    color = WakeUpSurface
                 ) {
                     WakeUpApp(viewModel = viewModel)
                 }

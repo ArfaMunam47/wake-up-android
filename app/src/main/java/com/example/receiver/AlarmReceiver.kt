@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -25,12 +26,46 @@ class AlarmReceiver : BroadcastReceiver() {
     companion object {
         const val TAG = "AlarmReceiver"
         const val ACTION_ALARM_TRIGGER = "com.example.wakeup.ACTION_ALARM_TRIGGER"
+        const val ACTION_DISMISS_NOTIFICATION = "com.example.wakeup.ACTION_DISMISS_NOTIFICATION"
         const val CHANNEL_ID = "wake_up_alarm_channel"
         const val CHANNEL_NAME = "Wake Up Alarms"
+
+        fun getNotificationId(alarmId: Long): Int {
+            return (1000 + (alarmId and 0xFFFF)).toInt()
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_ALARM_TRIGGER) return
+        val action = intent.action ?: return
+
+        if (action == ACTION_DISMISS_NOTIFICATION) {
+            val alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
+            val sequenceIndex = intent.getIntExtra(AlarmScheduler.EXTRA_SEQUENCE_INDEX, 0)
+            val maxSequence = intent.getIntExtra(AlarmScheduler.EXTRA_MAX_SEQUENCE, 1)
+
+            AlarmRingManager.stopRinging()
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            if (alarmId > 0) {
+                nm?.cancel(getNotificationId(alarmId))
+            }
+
+            if (alarmId > 0) {
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val repository = AlarmRepository.getRepository(context)
+                        repository.dismissSequenceForToday(alarmId, sequenceIndex, maxSequence)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error dismissing from notification", e)
+                    } finally {
+                        pending.finish()
+                    }
+                }
+            }
+            return
+        }
+
+        if (action != ACTION_ALARM_TRIGGER) return
 
         val alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
         val sequenceIndex = intent.getIntExtra(AlarmScheduler.EXTRA_SEQUENCE_INDEX, 0)
@@ -38,8 +73,9 @@ class AlarmReceiver : BroadcastReceiver() {
         val occurrenceDate = intent.getStringExtra(AlarmScheduler.EXTRA_OCCURRENCE_DATE) ?: ""
         val label = intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_LABEL) ?: "Wake Up"
         val challengeType = intent.getStringExtra(AlarmScheduler.EXTRA_CHALLENGE_TYPE) ?: "STANDARD"
+        val soundName = intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_SOUND) ?: "GENTLE"
 
-        Log.d(TAG, "Alarm triggered! id: $alarmId, seq: $sequenceIndex/$maxSequence, date: $occurrenceDate")
+        Log.d(TAG, "Real Android alarm triggered! id: $alarmId, seq: $sequenceIndex/$maxSequence, date: $occurrenceDate, sound: $soundName")
 
         val pendingResult = goAsync()
 
@@ -58,15 +94,17 @@ class AlarmReceiver : BroadcastReceiver() {
                 if (alarm.lastDismissedOccurrenceDate != null &&
                     alarm.lastDismissedOccurrenceDate == occurrenceDate
                 ) {
-                    Log.d(TAG, "Sequence for $occurrenceDate was already dismissed. Skipping step $sequenceIndex")
+                    Log.d(TAG, "Sequence for $occurrenceDate was already dismissed. Suppressing step $sequenceIndex")
                     pendingResult.finish()
                     return@launch
                 }
 
-                // Start ringing audio and vibration
-                AlarmRingManager.startRinging(context)
+                val activeSound = alarm.soundName.ifBlank { soundName }
 
-                // Show notification with full-screen intent
+                // Start ringing audio with selected sound and vibration (held by wake lock)
+                AlarmRingManager.startRinging(context, activeSound)
+
+                // Show heads-up notification with FullScreenIntent
                 showAlarmNotification(
                     context = context,
                     alarmId = alarmId,
@@ -74,10 +112,11 @@ class AlarmReceiver : BroadcastReceiver() {
                     sequenceIndex = sequenceIndex,
                     maxSequence = maxSequence,
                     occurrenceDate = occurrenceDate,
-                    challengeType = challengeType
+                    challengeType = challengeType,
+                    soundName = activeSound
                 )
 
-                // Also directly launch the full screen ringing activity
+                // Directly launch the full-screen ringing activity
                 val activityIntent = Intent(context, AlarmRingingActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -88,8 +127,15 @@ class AlarmReceiver : BroadcastReceiver() {
                     putExtra(AlarmScheduler.EXTRA_OCCURRENCE_DATE, occurrenceDate)
                     putExtra(AlarmScheduler.EXTRA_ALARM_LABEL, label)
                     putExtra(AlarmScheduler.EXTRA_CHALLENGE_TYPE, challengeType)
+                    putExtra(AlarmScheduler.EXTRA_ALARM_SOUND, activeSound)
                 }
                 context.startActivity(activityIntent)
+
+                // If this is the final sequence alarm for today and it's recurring,
+                // proactively schedule the next day's recurrence so future mornings are not missed!
+                if (sequenceIndex >= maxSequence - 1 && alarm.getRepeatDaysList().isNotEmpty()) {
+                    repository.scheduleNextRecurringOccurrence(alarmId, occurrenceDate)
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling alarm trigger", e)
@@ -106,14 +152,21 @@ class AlarmReceiver : BroadcastReceiver() {
         sequenceIndex: Int,
         maxSequence: Int,
         occurrenceDate: String,
-        challengeType: String
+        challengeType: String,
+        soundName: String
     ) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Create Channel with ALARM usage
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            val soundEnum = com.example.data.model.AlarmSound.fromName(soundName)
+            val resId = context.resources.getIdentifier(soundEnum.rawResName, "raw", context.packageName)
+            val alarmSound: Uri = if (resId != 0) {
+                Uri.parse("android.resource://" + context.packageName + "/" + resId)
+            } else {
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            }
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_ALARM)
@@ -129,6 +182,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 300, 500)
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                setBypassDnd(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -141,6 +195,7 @@ class AlarmReceiver : BroadcastReceiver() {
             putExtra(AlarmScheduler.EXTRA_OCCURRENCE_DATE, occurrenceDate)
             putExtra(AlarmScheduler.EXTRA_ALARM_LABEL, label)
             putExtra(AlarmScheduler.EXTRA_CHALLENGE_TYPE, challengeType)
+            putExtra(AlarmScheduler.EXTRA_ALARM_SOUND, soundName)
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -150,8 +205,22 @@ class AlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Action intent to dismiss directly if emergency
+        val dismissIntent = Intent(context, AlarmReceiver::class.java).apply {
+            action = ACTION_DISMISS_NOTIFICATION
+            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+            putExtra(AlarmScheduler.EXTRA_SEQUENCE_INDEX, sequenceIndex)
+            putExtra(AlarmScheduler.EXTRA_MAX_SEQUENCE, maxSequence)
+        }
+        val dismissPendingIntent = PendingIntent.getBroadcast(
+            context,
+            (alarmId * 1000 + 99).toInt(),
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val seqText = if (maxSequence > 1) {
-            "Alarm ${sequenceIndex + 1} of $maxSequence • Tap to dismiss"
+            "Alarm ${sequenceIndex + 1} of $maxSequence • Tap to solve challenge"
         } else {
             "Tap to solve wake-up challenge"
         }
@@ -162,13 +231,15 @@ class AlarmReceiver : BroadcastReceiver() {
             .setContentText(seqText)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
+            .setAutoCancel(false)
             .setOngoing(true)
             .setFullScreenIntent(pendingIntent, true)
             .setContentIntent(pendingIntent)
+            .addAction(0, "Open Challenge", pendingIntent)
+            .addAction(0, "Dismiss", dismissPendingIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
 
-        notificationManager.notify((1000 + alarmId).toInt(), notification)
+        notificationManager.notify(getNotificationId(alarmId), notification)
     }
 }
